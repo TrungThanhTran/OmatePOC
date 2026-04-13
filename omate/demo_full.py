@@ -7,8 +7,15 @@ Shows:
   - Clinical RAG with hallucination guards
   - LangGraph agent with HITL simulation
 
-Run: python -m omate.demo_full
+Run:
+  python -m omate.demo_full
+  python -m omate.demo_full --no-warnings   # suppress library noise
 """
+
+import sys
+import warnings
+if "--no-warnings" in sys.argv:
+    warnings.filterwarnings("ignore")
 
 import json
 from datetime import datetime, timezone
@@ -73,6 +80,9 @@ def run_demo():
     console.print("[dim]Generating synthetic AFib ECG + running denoising pipeline...[/dim]")
 
     detector = AnomalyDetector()
+    console.print("[dim]Warming up model (first-inference JIT compile)...[/dim]")
+    detector.warmup()
+
     raw_ecg = generate_synthetic_ecg(
         duration_s=10.0, fs=250, heart_rate=82,
         noise_level=0.05, anomaly_type="afib"
@@ -225,6 +235,14 @@ def run_demo():
                 console.print(f"  [dim]{i}.[/dim] {step}")
 
     console.print(results_table)
+
+    # Print buffered escalation alerts after the table (not mid-loop)
+    for alert in agent.tools.escalation_alerts:
+        console.print(Panel(
+            f"[bold]{alert}[/bold]",
+            border_style="red",
+            title="[bold red]ESCALATION[/bold red]",
+        ))
 
     # -----------------------------------------------------------------------
     # Summary
