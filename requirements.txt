@@ -5,17 +5,20 @@ PyWavelets>=1.4.1
 rich>=13.7.0
 python-dotenv>=1.0.0
 
-# PyTorch — Makefile installs CPU-only build to avoid 1.5GB CUDA download.
-# If you have a GPU and want CUDA support, install manually:
-#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+# PyTorch — Makefile installs CPU-only build to keep download small.
+# For CUDA: pip install torch --index-url https://download.pytorch.org/whl/cu121
 torch>=2.1.0
 
 # ── Testing ───────────────────────────────────────────────────────────────────
 pytest>=7.4.0
 
 # ── Optional: real LLM backends ───────────────────────────────────────────────
-# openai>=1.12.0        # export LLM_BACKEND=openai  OPENAI_API_KEY=sk-...
-# requests>=2.31.0      # export LLM_BACKEND=ollama  (ollama must be running)
+# openai>=1.12.0        # LLM_BACKEND=openai    OPENAI_API_KEY=sk-...
+# anthropic>=0.25.0     # LLM_BACKEND=anthropic  ANTHROPIC_API_KEY=sk-ant-...
+# requests>=2.31.0      # LLM_BACKEND=ollama     (ollama server must be running)
+
+# ── Optional: experiment tracking ────────────────────────────────────────────
+# mlflow>=2.12.0        # MLFLOW_TRACKING_URI=http://localhost:5000
 
 # ── Optional: real ECG benchmark data ─────────────────────────────────────────
 # wfdb>=4.1.2           # pip install wfdb → python scripts/download_mitbih.py

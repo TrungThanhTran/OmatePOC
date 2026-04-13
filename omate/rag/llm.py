@@ -1,12 +1,15 @@
 """
 LLM backend adapters.
 
-Supports three backends:
-  - "mock"   : deterministic fake responses (no API key, for testing)
-  - "openai" : OpenAI API (gpt-4o-mini by default)
-  - "ollama" : local Ollama server (mistral by default)
+Supports four backends:
+  - "mock"      : deterministic fake responses (no API key, for testing)
+  - "openai"    : OpenAI API (gpt-4o-mini by default)
+  - "anthropic" : Anthropic API (claude-haiku-4-5-20251001 by default)
+  - "ollama"    : local Ollama server (mistral by default)
 
 Switch via LLM_BACKEND environment variable.
+API keys are read from environment variables or set interactively via
+omate.config.configure_llm_interactive().
 """
 
 import os
@@ -101,6 +104,47 @@ class OpenAILLM(LLMBackend):
         )
 
 
+class AnthropicLLM(LLMBackend):
+    """
+    Anthropic API backend.
+
+    Uses the Messages API. Requires ANTHROPIC_API_KEY.
+    Default model: claude-haiku-4-5-20251001 (fast, cheap, good at structured tasks).
+    For higher accuracy swap to claude-sonnet-4-6 or claude-opus-4-6.
+
+    pip install anthropic
+    export ANTHROPIC_API_KEY=sk-ant-...
+    export LLM_BACKEND=anthropic
+    """
+
+    def __init__(self, model: str = "claude-haiku-4-5-20251001",
+                 api_key: str | None = None):
+        try:
+            import anthropic
+            self._anthropic = anthropic
+        except ImportError:
+            raise ImportError(
+                "pip install anthropic  # then set ANTHROPIC_API_KEY"
+            )
+        self.client = self._anthropic.Anthropic(
+            api_key=api_key or os.getenv("ANTHROPIC_API_KEY")
+        )
+        self.model = model
+
+    def generate(self, prompt: str, temperature: float = 0.0) -> LLMResponse:
+        message = self.client.messages.create(
+            model=self.model,
+            max_tokens=800,
+            temperature=temperature,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return LLMResponse(
+            text=message.content[0].text,
+            model=self.model,
+            temperature=temperature,
+        )
+
+
 class OllamaLLM(LLMBackend):
     """Local Ollama backend."""
 
@@ -129,13 +173,24 @@ class OllamaLLM(LLMBackend):
 def get_llm_backend() -> LLMBackend:
     """
     Factory — returns the backend specified by LLM_BACKEND env var.
-    Defaults to MockLLM if not set.
+    Defaults to MockLLM if not set or unrecognised.
+
+    Supported values for LLM_BACKEND:
+      mock      — no API key needed (default)
+      openai    — requires OPENAI_API_KEY
+      anthropic — requires ANTHROPIC_API_KEY
+      ollama    — requires Ollama server running locally
     """
     backend = os.getenv("LLM_BACKEND", "mock").lower()
     if backend == "openai":
         return OpenAILLM(
             model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
             api_key=os.getenv("OPENAI_API_KEY"),
+        )
+    elif backend == "anthropic":
+        return AnthropicLLM(
+            model=os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001"),
+            api_key=os.getenv("ANTHROPIC_API_KEY"),
         )
     elif backend == "ollama":
         return OllamaLLM(
