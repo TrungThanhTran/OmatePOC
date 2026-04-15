@@ -5,6 +5,9 @@ from .loader import (
     load_mitbih_record, list_available_records, resample_to,
     MITBIHRecord, RECORD_CATALOGUE,
 )
+from .ecg_classifier import (
+    ClinicalRuleClassifier, HuggingFaceECGClassifier, get_ecg_classifier,
+)
 
 __all__ = [
     "run_denoising_pipeline", "DenoisedSignal", "bandpass_ecg", "wavelet_denoise",
@@ -12,4 +15,5 @@ __all__ = [
     "run_signal_pipeline", "generate_synthetic_ecg", "SignalEvent",
     "load_mitbih_record", "list_available_records", "resample_to",
     "MITBIHRecord", "RECORD_CATALOGUE",
+    "ClinicalRuleClassifier", "HuggingFaceECGClassifier", "get_ecg_classifier",
 ]

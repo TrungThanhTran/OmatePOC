@@ -45,6 +45,7 @@ def _parse_args() -> dict:
         "start_s": None,
         "duration_s": 10.0,
         "lead": 0,
+        "classifier": "clinical",   # "clinical" | "huggingface" | "patchtst"
     }
     i = 0
     while i < len(args):
@@ -61,6 +62,8 @@ def _parse_args() -> dict:
             result["duration_s"] = float(args[i + 1]); i += 2
         elif a == "--lead" and i + 1 < len(args):
             result["lead"] = int(args[i + 1]); i += 2
+        elif a == "--classifier" and i + 1 < len(args):
+            result["classifier"] = args[i + 1]; i += 2
         else:
             i += 1
     return result
@@ -70,17 +73,21 @@ def _parse_args() -> dict:
 # Synthetic demo (default)
 # ---------------------------------------------------------------------------
 
-def run_synthetic_demo() -> None:
-    from omate.signal import generate_synthetic_ecg, run_signal_pipeline, AnomalyDetector
+def run_synthetic_demo(opts: dict) -> None:
+    from omate.signal import (
+        generate_synthetic_ecg, run_signal_pipeline, get_ecg_classifier,
+    )
+
+    clf_name = opts.get("classifier", "clinical")
+    clf = get_ecg_classifier(clf_name)
+    backend_label = getattr(clf, "status", clf_name)
 
     console.print(Panel.fit(
         "[bold cyan]Omate POC — Signal Intelligence Demo[/bold cyan]\n"
-        "Denoising pipeline + PatchTST anomaly detection\n"
+        f"Denoising pipeline + classifier: [bold]{clf_name}[/bold]\n"
         "[dim]Source: synthetic ECG generator[/dim]",
         border_style="cyan",
     ))
-
-    detector = AnomalyDetector()
 
     scenarios = [
         ("patient-A", "normal",       72,  0.03, "Normal sinus rhythm"),
@@ -115,7 +122,7 @@ def run_synthetic_demo() -> None:
             raw_ecg=raw,
             patient_id=patient_id,
             timestamp=_ts(),
-            detector=detector,
+            classifier=clf,
         )
         latency_ms = (time.perf_counter() - t0) * 1000
 
@@ -240,16 +247,19 @@ def _run_single_mitbih(record_id: str, opts: dict) -> None:
     console.print(Rule("[dim]Denoising Pipeline[/dim]", style="dim"))
     console.print("[dim]Running bandpass + wavelet denoising at 360 Hz...[/dim]")
 
-    detector = AnomalyDetector()
-    console.print("[dim]Warming up model...[/dim]")
-    detector.warmup()
+    from omate.signal import get_ecg_classifier
+    clf_name = opts.get("classifier", "clinical")
+    clf = get_ecg_classifier(clf_name)
+    clf_status = getattr(clf, "status", clf_name)
+    console.print(f"  Classifier: [bold]{clf_status}[/bold]")
+    clf.warmup()
 
     t0 = time.perf_counter()
     denoised, anomaly, event = run_signal_pipeline(
         raw_ecg=rec.signal,
         patient_id=f"mitbih-{record_id}",
         timestamp=_ts(),
-        detector=detector,
+        classifier=clf,
         fs=rec.fs,
     )
     latency_ms = (time.perf_counter() - t0) * 1000
@@ -338,9 +348,12 @@ def _run_all_mitbih(opts: dict) -> None:
         border_style="cyan",
     ))
 
-    detector = AnomalyDetector()
-    console.print("[dim]Warming up model...[/dim]")
-    detector.warmup()
+    from omate.signal import get_ecg_classifier
+    clf_name = opts.get("classifier", "clinical")
+    clf = get_ecg_classifier(clf_name)
+    clf_status = getattr(clf, "status", clf_name)
+    console.print(f"[dim]Classifier: {clf_status} · Warming up...[/dim]")
+    clf.warmup()
 
     table = Table(title="MIT-BIH Real ECG — Pipeline Results",
                   show_header=True, header_style="bold magenta")
@@ -366,7 +379,7 @@ def _run_all_mitbih(opts: dict) -> None:
                 raw_ecg=rec.signal,
                 patient_id=f"mitbih-{record_id}",
                 timestamp=_ts(),
-                detector=detector,
+                classifier=clf,
                 fs=rec.fs,
             )
             risk_color = "red" if event.risk_score >= 0.9 else "yellow" if event.risk_score >= 0.5 else "green"
@@ -410,7 +423,7 @@ def run_demo() -> None:
         else:
             _run_all_mitbih(opts)
     else:
-        run_synthetic_demo()
+        run_synthetic_demo(opts)
 
 
 if __name__ == "__main__":

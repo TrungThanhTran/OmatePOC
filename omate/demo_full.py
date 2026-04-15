@@ -46,7 +46,8 @@ def section(title: str):
 
 def _parse_args() -> dict:
     args = sys.argv[1:]
-    result = {"data": None, "record": None, "start_s": None, "duration_s": 10.0}
+    result = {"data": None, "record": None, "start_s": None,
+              "duration_s": 10.0, "classifier": "clinical"}
     i = 0
     while i < len(args):
         a = args[i]
@@ -58,6 +59,8 @@ def _parse_args() -> dict:
             result["start_s"] = float(args[i + 1]); i += 2
         elif a == "--duration" and i + 1 < len(args):
             result["duration_s"] = float(args[i + 1]); i += 2
+        elif a == "--classifier" and i + 1 < len(args):
+            result["classifier"] = args[i + 1]; i += 2
         else:
             i += 1
     return result
@@ -116,9 +119,12 @@ def run_demo():
     # -----------------------------------------------------------------------
     section("Step 2: Signal Intelligence Pipeline — Patient B (João Costa)")
 
-    detector = AnomalyDetector()
-    console.print("[dim]Warming up model (first-inference JIT compile)...[/dim]")
-    detector.warmup()
+    from omate.signal import get_ecg_classifier
+    clf_name = opts.get("classifier", "clinical")
+    clf = get_ecg_classifier(clf_name)
+    clf_status = getattr(clf, "status", clf_name)
+    console.print(f"[dim]Classifier: [bold]{clf_status}[/bold] · warming up...[/dim]")
+    clf.warmup()
 
     ecg_fs = 250
     mitbih_rec = None
@@ -155,7 +161,7 @@ def run_demo():
         raw_ecg=raw_ecg,
         patient_id="patient-B",
         timestamp=_ts(),
-        detector=detector,
+        classifier=clf,
         fs=ecg_fs,
     )
 
@@ -270,7 +276,7 @@ def run_demo():
             raw_ecg=raw,
             patient_id=sc["patient_id"],
             timestamp=_ts(),
-            detector=detector,
+            classifier=clf,
         )
         signal_events = [vars(evt)]
 
