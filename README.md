@@ -128,24 +128,56 @@ ESCALATION_THRESHOLD=0.90
 
 ## Real ECG Data (MIT-BIH)
 
+Download ~50 MB of real cardiologist-annotated ECG recordings from PhysioNet:
+
 ```bash
-make download-mitbih
-python -m omate.demo_signal --data mitbih --record 100
+# 1. Install wfdb reader
+pip install wfdb
+
+# 2. Download 11 records (Normal, AFib, V-tach, LBBB, PVC, Pacemaker, ...)
+python scripts/download_mitbih.py
+
+# 3. Run signal demo with real ECG
+python -m omate.demo_signal --data mitbih --record 202   # AFib (best demo)
+python -m omate.demo_signal --data mitbih --record 100   # Normal sinus rhythm
+python -m omate.demo_signal --data mitbih --record 207   # Ventricular tachycardia
+python -m omate.demo_signal --data mitbih                # All downloaded records
+python -m omate.demo_signal --data mitbih --list         # List available records
+
+# 4. Full pipeline with real ECG
+python -m omate.demo_full --data mitbih --record 202
 ```
+
+Each demo shows ground-truth cardiologist annotations vs model predictions.
 
 ---
 
-## Available Make Commands
+## All Commands (without make)
 
-```
-make install        Install core deps (CPU-only PyTorch, ~300MB)
-make demo-signal    Run signal pipeline demo
-make demo-full      Run full system demo
-make test           Run all 56 tests
-make demo-openai    Run with OpenAI (set OPENAI_API_KEY first)
-make demo-ollama    Run with local Ollama
-make download-mitbih Download MIT-BIH real ECG data
-make clean          Remove cache files
+```bash
+# Install
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install numpy scipy PyWavelets rich python-dotenv pytest
+pip install -e .
+
+# Demos — synthetic ECG (no download needed)
+python -m omate.demo_signal          # signal pipeline
+python -m omate.demo_full            # full system: signal + FHIR + RAG + agent
+python -m omate.demo_dashboard       # live terminal dashboard
+
+# Demos — real MIT-BIH ECG
+pip install wfdb
+python scripts/download_mitbih.py
+python -m omate.demo_signal --data mitbih --record 202
+python -m omate.demo_full   --data mitbih --record 202
+
+# Tests
+pytest tests/ -v
+
+# Real LLM backends
+LLM_BACKEND=openai  OPENAI_API_KEY=sk-...     python -m omate.demo_full
+LLM_BACKEND=anthropic ANTHROPIC_API_KEY=sk-ant-... python -m omate.demo_full
+LLM_BACKEND=ollama  python -m omate.demo_full   # requires: ollama serve
 ```
 
 ---
