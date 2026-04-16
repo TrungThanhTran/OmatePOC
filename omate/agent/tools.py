@@ -13,6 +13,9 @@ class OmateTools:
 
     def __init__(self, fhir_store: FHIRStore):
         self.store = fhir_store
+        # Escalation alerts are buffered so demo output can print them
+        # in the right order (after result tables, not mid-loop).
+        self.escalation_alerts: list[str] = []
 
     def get_patient_signal_history(self, patient_id: str,
                                     last_n: int = 10) -> list[dict]:
@@ -88,13 +91,14 @@ class OmateTools:
         POC: prints alert and returns confirmation.
         """
         msg = (
-            f"🚨 ESCALATION ALERT\n"
-            f"   Patient: {patient_id}\n"
-            f"   Anomaly: {anomaly_class}\n"
-            f"   Risk score: {risk_score:.2f}\n"
-            f"   Action required: Immediate physician review"
+            f"ESCALATION ALERT\n"
+            f"   Patient:  {patient_id}\n"
+            f"   Anomaly:  {anomaly_class}\n"
+            f"   Risk:     {risk_score:.2f}\n"
+            f"   Action:   Immediate physician review required"
         )
-        print(msg)
+        # Buffer the alert — callers print via escalation_alerts after tables
+        self.escalation_alerts.append(msg)
         return f"On-call physician notified for patient {patient_id}"
 
     def write_diagnostic_report(self, patient_id: str,

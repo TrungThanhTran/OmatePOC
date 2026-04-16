@@ -7,8 +7,17 @@ Shows:
   - Clinical RAG with hallucination guards
   - LangGraph agent with HITL simulation
 
-Run: python -m omate.demo_full
+Run:
+  python -m omate.demo_full
+  python -m omate.demo_full --no-warnings           # suppress library noise
+  python -m omate.demo_full --data mitbih --record 202   # real AFib ECG
+  python -m omate.demo_full --data mitbih --record 100   # real normal ECG
 """
+
+import sys
+import warnings
+if "--no-warnings" in sys.argv:
+    warnings.filterwarnings("ignore")
 
 import json
 from datetime import datetime, timezone
@@ -35,10 +44,49 @@ def section(title: str):
     console.print(Rule(f"[bold yellow]{title}[/bold yellow]", style="yellow"))
 
 
+def _parse_args() -> dict:
+    args = sys.argv[1:]
+    result = {"data": None, "record": None, "start_s": None,
+              "duration_s": 10.0, "classifier": "clinical"}
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--data" and i + 1 < len(args):
+            result["data"] = args[i + 1]; i += 2
+        elif a == "--record" and i + 1 < len(args):
+            result["record"] = args[i + 1]; i += 2
+        elif a == "--start" and i + 1 < len(args):
+            result["start_s"] = float(args[i + 1]); i += 2
+        elif a == "--duration" and i + 1 < len(args):
+            result["duration_s"] = float(args[i + 1]); i += 2
+        elif a == "--classifier" and i + 1 < len(args):
+            result["classifier"] = args[i + 1]; i += 2
+        else:
+            i += 1
+    return result
+
+
+def _load_real_ecg(record_id: str, start_s=None, duration_s=10.0):
+    """Load MIT-BIH record; return (signal, fs, record_obj)."""
+    from omate.signal import load_mitbih_record
+    rec = load_mitbih_record(record_id, start_s=start_s, duration_s=duration_s)
+    return rec.signal, rec.fs, rec
+
+
 def run_demo():
+    opts = _parse_args()
+    use_mitbih = opts["data"] == "mitbih"
+    mitbih_record = opts.get("record") or "202"  # default to AFib record
+
+    title_suffix = (
+        f"\n[dim]ECG source: MIT-BIH record {mitbih_record} "
+        f"(PhysioNet · 360 Hz · real data)[/dim]"
+        if use_mitbih else
+        "\n[dim]ECG source: synthetic generator[/dim]"
+    )
     console.print(Panel.fit(
         "[bold cyan]Omate POC — Full Pipeline Demo[/bold cyan]\n"
-        "Signal → FHIR → RAG → Agent → HITL",
+        f"Signal → FHIR → RAG → Agent → HITL{title_suffix}",
         border_style="cyan",
     ))
 
@@ -70,20 +118,56 @@ def run_demo():
     # Step 2: Run signal pipeline for Patient B (AFib, on amiodarone)
     # -----------------------------------------------------------------------
     section("Step 2: Signal Intelligence Pipeline — Patient B (João Costa)")
-    console.print("[dim]Generating synthetic AFib ECG + running denoising pipeline...[/dim]")
 
-    detector = AnomalyDetector()
-    raw_ecg = generate_synthetic_ecg(
-        duration_s=10.0, fs=250, heart_rate=82,
-        noise_level=0.05, anomaly_type="afib"
-    )
+    from omate.signal import get_ecg_classifier
+    clf_name = opts.get("classifier", "clinical")
+    clf = get_ecg_classifier(clf_name)
+    clf_status = getattr(clf, "status", clf_name)
+    console.print(f"[dim]Classifier: [bold]{clf_status}[/bold] · warming up...[/dim]")
+    clf.warmup()
+
+    ecg_fs = 250
+    mitbih_rec = None
+    if use_mitbih:
+        console.print(f"[dim]Loading MIT-BIH record {mitbih_record} (real ECG)...[/dim]")
+        try:
+            raw_ecg, ecg_fs, mitbih_rec = _load_real_ecg(
+                mitbih_record,
+                start_s=opts.get("start_s"),
+                duration_s=opts["duration_s"],
+            )
+            console.print(
+                f"  [dim]Record {mitbih_record}: {mitbih_rec.label} · "
+                f"{len(raw_ecg)} samples @ {ecg_fs} Hz · "
+                f"{mitbih_rec.beat_count} beats · "
+                f"dominant: {mitbih_rec.dominant_rhythm}[/dim]"
+            )
+        except (FileNotFoundError, ImportError) as e:
+            console.print(f"[yellow]Warning: {e}[/yellow]")
+            console.print("[yellow]Falling back to synthetic ECG.[/yellow]")
+            raw_ecg = generate_synthetic_ecg(
+                duration_s=10.0, fs=250, heart_rate=82,
+                noise_level=0.05, anomaly_type="afib"
+            )
+            use_mitbih = False
+    else:
+        console.print("[dim]Generating synthetic AFib ECG + running denoising pipeline...[/dim]")
+        raw_ecg = generate_synthetic_ecg(
+            duration_s=10.0, fs=250, heart_rate=82,
+            noise_level=0.05, anomaly_type="afib"
+        )
+
     denoised, anomaly, event = run_signal_pipeline(
         raw_ecg=raw_ecg,
         patient_id="patient-B",
         timestamp=_ts(),
-        detector=detector,
+        classifier=clf,
+        fs=ecg_fs,
     )
 
+    if mitbih_rec:
+        console.print(f"  Ground truth:[dim] {mitbih_rec.dominant_rhythm} "
+                      f"({mitbih_rec.beat_count} annotated beats)[/dim]")
     console.print(f"  Detected:    [yellow]{anomaly.predicted_class}[/yellow]")
     console.print(f"  Risk score:  [yellow]{event.risk_score:.3f}[/yellow]")
     console.print(f"  Confidence:  {anomaly.confidence:.3f}")
@@ -192,7 +276,7 @@ def run_demo():
             raw_ecg=raw,
             patient_id=sc["patient_id"],
             timestamp=_ts(),
-            detector=detector,
+            classifier=clf,
         )
         signal_events = [vars(evt)]
 
@@ -225,6 +309,14 @@ def run_demo():
                 console.print(f"  [dim]{i}.[/dim] {step}")
 
     console.print(results_table)
+
+    # Print buffered escalation alerts after the table (not mid-loop)
+    for alert in agent.tools.escalation_alerts:
+        console.print(Panel(
+            f"[bold]{alert}[/bold]",
+            border_style="red",
+            title="[bold red]ESCALATION[/bold red]",
+        ))
 
     # -----------------------------------------------------------------------
     # Summary

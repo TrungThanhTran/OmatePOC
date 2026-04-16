@@ -10,6 +10,11 @@ For production: use the full PatchTST architecture, export to ONNX,
 serve via NVIDIA Triton with target <100ms p99 on A10G GPU.
 """
 
+import warnings
+warnings.filterwarnings("ignore", message=".*enable_nested_tensor.*")
+warnings.filterwarnings("ignore", message=".*is deprecated.*", category=UserWarning)
+warnings.filterwarnings("ignore", category=UserWarning, module="torch")
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -120,6 +125,17 @@ class AnomalyDetector:
         self.model.to(device)
         self.model.eval()
         self.seq_len = 2500  # 10s @ 250Hz
+
+    def warmup(self) -> None:
+        """
+        JIT-compile the model and stabilize first-inference latency.
+
+        The first PyTorch inference is typically 10–100x slower than
+        subsequent ones due to kernel compilation and memory allocation.
+        Call this once after construction, before any timed measurements.
+        """
+        dummy = np.zeros(self.seq_len, dtype=np.float32)
+        self.predict(dummy)
 
     @classmethod
     def load(cls, path: str, device: str = "cpu") -> "AnomalyDetector":

@@ -112,7 +112,8 @@ def generate_synthetic_ecg(duration_s: float = 10.0, fs: int = 250,
 def run_signal_pipeline(raw_ecg: np.ndarray, patient_id: str,
                           timestamp: str, fs: int = 250,
                           escalation_threshold: float = ESCALATION_THRESHOLD,
-                          detector: AnomalyDetector | None = None
+                          detector: AnomalyDetector | None = None,
+                          classifier=None,
                           ) -> tuple[DenoisedSignal, AnomalyResult, SignalEvent | None]:
     """
     Full signal intelligence pipeline.
@@ -123,20 +124,25 @@ def run_signal_pipeline(raw_ecg: np.ndarray, patient_id: str,
         timestamp: ISO 8601 event timestamp
         fs: sampling frequency in Hz
         escalation_threshold: risk score above which to flag for escalation
-        detector: pre-initialized AnomalyDetector (creates new if None)
+        detector: pre-initialized AnomalyDetector (legacy, creates new if None)
+        classifier: ClinicalRuleClassifier or HuggingFaceECGClassifier.
+                    Takes priority over detector when provided.
 
     Returns:
         (denoised, anomaly_result, signal_event)
-        signal_event is None if anomaly not detected
     """
-    if detector is None:
-        detector = AnomalyDetector()
+    # Resolve which classifier to use
+    clf = classifier or detector or AnomalyDetector()
 
     # Step 1 & 2: Denoise
     denoised = run_denoising_pipeline(raw_ecg, fs=fs)
 
-    # Step 3: Anomaly detection on denoised signal
-    anomaly = detector.predict(denoised.denoised)
+    # Step 3: Anomaly detection
+    # prefer predict_from_denoised (uses pre-computed RR intervals)
+    if hasattr(clf, "predict_from_denoised"):
+        anomaly = clf.predict_from_denoised(denoised)
+    else:
+        anomaly = clf.predict(denoised.denoised)
 
     # Build event only if anomaly detected or for logging
     rr = denoised.rr_intervals

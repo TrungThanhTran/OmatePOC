@@ -1,8 +1,9 @@
 .PHONY: install install-dev install-anthropic install-openai install-mlflow \
         demo-signal demo-full demo-dashboard \
+        demo-signal-mitbih demo-full-mitbih \
         demo-openai demo-anthropic demo-ollama \
         demo-dashboard-openai demo-dashboard-anthropic \
-        test clean help
+        download-mitbih test clean help
 
 # ── Default ───────────────────────────────────────────────────────────────────
 help:
@@ -16,8 +17,10 @@ help:
 	@echo "  make install-mlflow        + MLflow experiment tracker"
 	@echo ""
 	@echo "  ── Demos ────────────────────────────────────────────────────────"
-	@echo "  make demo-signal           Signal denoising only (~2s)"
+	@echo "  make demo-signal           Signal denoising — synthetic ECG (~2s)"
 	@echo "  make demo-full             Full pipeline: signal+FHIR+RAG+agent"
+	@echo "  make demo-signal-mitbih    Signal demo with real MIT-BIH ECG (all records)"
+	@echo "  make demo-full-mitbih      Full pipeline with real MIT-BIH record 202 (AFib)"
 	@echo "  make demo-dashboard        Live dashboard (mock LLM — no key needed)"
 	@echo "  make demo-dashboard-anthropic  Dashboard with ANTHROPIC_API_KEY"
 	@echo "  make demo-dashboard-openai     Dashboard with OPENAI_API_KEY"
@@ -101,6 +104,18 @@ test:
 download-mitbih:
 	pip install wfdb --quiet
 	python scripts/download_mitbih.py
+
+demo-signal-mitbih:
+	@python -c "import os; exit(0 if os.path.isdir('data/mitbih') else 1)" 2>/dev/null || \
+	  (echo "→ MIT-BIH data not found. Running download first..." && \
+	   pip install wfdb --quiet && python scripts/download_mitbih.py)
+	python -m omate.demo_signal --data mitbih
+
+demo-full-mitbih:
+	@python -c "import os; exit(0 if os.path.isdir('data/mitbih') else 1)" 2>/dev/null || \
+	  (echo "→ MIT-BIH data not found. Running download first..." && \
+	   pip install wfdb --quiet && python scripts/download_mitbih.py)
+	python -m omate.demo_full --data mitbih --record 202
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 clean:
